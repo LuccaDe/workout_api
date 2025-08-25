@@ -7,6 +7,12 @@ from workout_api.centro_treinamento.models import CentroTreinamentoModel
 from workout_api.contrib.dependencies import DatabaseDependency
 from sqlalchemy.future import select
 
+from typing import Iterable
+from fastapi import Query, Depends
+from fastapi_pagination.limit_offset import LimitOffsetPage, LimitOffsetParams
+from fastapi_pagination.ext.sqlalchemy_future import paginate
+
+
 router = APIRouter()
 
 @router.post(
@@ -29,17 +35,25 @@ async def post(
     
     
 @router.get(
-    '/', 
+    '/',
     summary='Consultar todos os centros de treinamento',
     status_code=status.HTTP_200_OK,
-    response_model=list[CentroTreinamentoOut],
+    response_model=LimitOffsetPage[CentroTreinamentoOut],
 )
-async def query(db_session: DatabaseDependency) -> list[CentroTreinamentoOut]:
-    centros_treinamento_out: list[CentroTreinamentoOut] = (
-        await db_session.execute(select(CentroTreinamentoModel))
-    ).scalars().all()
+async def query(
+    db_session: DatabaseDependency = Depends(),
+    nome: str | None = Query(None),
+    params: LimitOffsetParams = Depends(),
+) -> LimitOffsetPage[CentroTreinamentoOut]:
+    stmt = select(CentroTreinamentoModel)
     
-    return centros_treinamento_out
+    if nome:
+        stmt = stmt.where(CentroTreinamentoModel.nome.ilike(f"%{nome}%"))
+    
+    async def _transform(items: Iterable):
+        return [CentroTreinamentoOut.model_validate(c) for c in items]
+    
+    return await paginate(db_session, stmt, params=params, transformer=_transform)
 
 
 @router.get(
